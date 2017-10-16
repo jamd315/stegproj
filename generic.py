@@ -1,25 +1,5 @@
-"""
-Generic parser - Use PIL to retreive pixel array
-
-Notes:
-Uses third party library, is that allowed?
-
-TODO:
-Test this on a computer with python
-"""
 import os
 import sys
-from PIL import Image
-import numpy as np
-
-
-class genericParse(base):
-	def __init__(self, file=""):
-		base.__init__(self, file)
-		self.PIL_img = Image.open(file)
-		self.pixel_array = np.asarray(self.PIL_img)
-		self.pixels = [val for sub in self.pixel_array for val in sub]  # Flatten the array
-		self.attr.update({"height":self.pixel_array.shape[0], "width":self.pixel_array.shape[1]})
 
 
 if __name__ == "__main__":

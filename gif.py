@@ -1,23 +1,6 @@
-"""
-GIF framework - retreive pixel array, get attr, etc
-
-Notes:
-
-TODO:
-
-"""
 import os
 import sys
-from base import base
-
-
-class gifParse(base):
-	def __init__(self, file="range.gif"):
-		base.__init__(self, file)
-		assert file[-4:] == ".gif", "File not GIF"
-		magicnum = self.from_front(6)
-		assert magicnum == b"GIF87a" or magicnum == b"GIF89a", "Broken magic number"
-		
+from base import base, gifParse
 
 
 if __name__ == "__main__":

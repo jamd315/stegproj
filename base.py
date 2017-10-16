@@ -1,16 +1,12 @@
 """
-Base Frame - All the image parsers extend from this, meant for quick scalability.
-
-Notes:
-
-TODO:
-
+Base Frame - All the steg attempts extend from this, meant for quick scalability.
 """
 import os
 import sys
+import zlib
 
 
-class base():
+class base:
 	def __init__(self, file):
 		self.img = None
 		self.pixel_array = None
@@ -41,3 +37,164 @@ class base():
 					+fill*(max_key+extra_spaces-len(str(key)))\
 					+str(the_dict[key])+"\n"
 		return str_out
+
+	@staticmethod
+	def warn(msg, level=0):
+		if level is 0:
+			print("\n[WARN] "+msg+"\n")
+		elif level is 1:
+			print("\n[REALLY WARN] "+msg+"\n")
+		else:
+			exit("[REALLY WARN] "+msg+"\n")
+
+class bmpParse(base):
+	"""
+	BMP Framework - retreive pixel array, get attr, etc
+
+	Useful stuff
+	https://en.wikipedia.org/wiki/BMP_file_format#File_structure see also examples
+	https://upload.wikimedia.org/wikipedia/commons/c/c4/BMPfileFormat.png
+	https://filemonger.com/specs/bmp/wotsit.org/Bmpfrmat/Bmpfrmat.html
+	https://filemonger.com/specs/bmp/wotsit.org/bmp/BMP.txt
+
+	Notes:
+	Rows are from *bottom to top*, left to right
+	Little-endian, also called "Intel Format"
+	Does BMP support BW encoded images?  Looks like image is still RGB
+	"""
+	def __init__(self, file="8bitBW.bmp"):
+		base.__init__(self, file)  # This init only contains BMP relevant stuff, see base.__init__ for general stuff
+		assert file[-4:] == ".bmp", "Not a bmp"
+		self.getattr()  # Attributes will get the offset where the image starts, image is offset through end of file
+		self.raw_bytes = self.img[self.attr["offset"]:]
+		self.get_pixel_array()
+		
+	def getattr(self):
+		self.attr.update({  # Start with the file header
+			"headerField":self.img[:2].decode(),
+			"size":int.from_bytes(self.img[2:6], byteorder="little"), # In bytes
+			"app01":bytes(self.img[6:8]),  # These two are application specific, almost never used,
+			"app02":bytes(self.img[8:10]),
+			"offset":int.from_bytes(self.img[10:14], byteorder="little")
+		})
+		if self.attr["headerField"] != "BM":
+			self.warn("Using OS/2 is not supported")
+		DIB_size = int.from_bytes(self.img[14:18], byteorder="little")
+		DIB = self.img[18:18+DIB_size]
+		self.attr.update({  # Get the data from the DIB header and append to the attributes 
+			"DIB_size":DIB_size,
+			"width":int.from_bytes(DIB[:4], byteorder="little"),
+			"height":int.from_bytes(DIB[4:8], byteorder="little"),
+			"colorPlanes":int.from_bytes(DIB[8:10], byteorder="little"),
+			"bitDepth":int.from_bytes(DIB[10:12], byteorder="little"),
+			"compressionMethod":int.from_bytes(DIB[12:16], byteorder="little"),
+			"imageSize":int.from_bytes(DIB[16:20], byteorder="little"),
+			"printResH":int.from_bytes(DIB[20:24], byteorder="little"), #pix/meter
+			"printResV":int.from_bytes(DIB[24:28], byteorder="little"), #pix/meter
+			"colorsInPalette":int.from_bytes(DIB[28:32], byteorder="little"),
+			"importantColors":int.from_bytes(DIB[32:36], byteorder="little")
+		})
+		assert self.attr["compressionMethod"] == 0, "No compression"
+
+	def get_pixel_array(self):
+		self.pixel_array = [self.raw_bytes[i:i+self.attr["width"]] for i in range(0, len(self.raw_bytes), self.attr["width"])][::-1]
+		self.pixels = b"".join(self.pixel_array)
+
+
+class pngParse(base):
+	"""
+	PNG Framework - retreive pixel array, get attr, etc.
+
+	Useful stuff
+	http://www.libpng.org/pub/png/spec/1.2/PNG-Structure.html
+	http://www.libpng.org/pub/png/spec/1.2/PNG-Chunks.html
+
+	TODO:
+	Still don't have pixel array from IDAT chunk(s)
+	  * Compression?  Maybe after something else, tried zlib with no success
+	  * Filter?
+	  * Interlace?
+	(Maybe?) verify CRC
+	"""
+	def __init__(self, file="8bitBW.png"):  # This init only contains PNG relevant stuff, see base.__init__ for general stuff
+		self.warn("PNG isn't quite working yet", 2)
+		base.__init__(self, file)
+		assert file[-4:] == ".png", "File not PNG"
+		self.rawChunks = {}
+		self.chunkParse()
+		self.raw_bytes = zlib.decompress(self.raw_bytes)  # TODO verify this is correct
+		
+	
+	def chunkParse(self):
+		fileHead = self.from_front(8)
+		assert fileHead == b'\x89PNG\r\n\x1a\n', "invalid png"  # If this fails, not a PNG or very broken
+		chunkType = ""  # flag var needs initialization
+		while chunkType != "IEND":
+			chunkLen = int.from_bytes(self.from_front(4), byteorder="big")
+			chunkType = self.from_front(4).decode()
+			chunk = self.from_front(chunkLen)
+			crc = self.from_front(4)  # Currently this is largely ignored, TODO why not fix this and verify the CRC?
+			self.rawChunks.update({chunkType:chunk})  # Store each chunk under its name in a dict
+			if chunkType == "IHDR":  # Image header
+				self.attr = {
+					"file":self.file,
+					"width":int.from_bytes(chunk[:4], byteorder="big"),
+					"height":int.from_bytes(chunk[4:8], byteorder="big"),
+					"bitDepth":chunk[8],
+					"colorType":chunk[9],
+					"compressionMethod":chunk[10],
+					"filterMethod":{"0":"None", "1":"Sub", "2":"Up", "3":"Average", "4":"Paeth"}[str(chunk[11])],
+					"interlaceMethod":{"0":"None", "1":"Adam7"}[str(chunk[12])]
+				}
+				if self.attr["colorType"] is not 0 or self.attr["bitDepth"] not in [1, 2, 4, 8, 16]:
+					self.warn("Not a greyscale, or invalid bit depth")
+				if self.attr["interlaceMethod"] is not "None":
+					self.warn("Adam7 interlace detected, currently not supported")
+				if self.attr["filterMethod"] is not "None":
+					self.warn("Unknown filter type of "+self.attr["filterMethod"])
+			elif chunkType == "IDAT":
+				self.raw_bytes += chunk  # So it turns out there can be multiple IDAT chunks, this method facilitates that.
+			elif chunkType == "IEND":
+				pass  # Just some laziness with the flag var to keep IEND out of the else block
+			elif chunkType == "tIME":
+				year = str(int.from_bytes(chunk[:2], byteorder="big"))
+				month = str(chunk[2]).zfill(2)
+				day = str(chunk[3]).zfill(2)
+				hour = str(chunk[4]).zfill(2)
+				minute = str(chunk[5]).zfill(2)
+				second = str(chunk[6]).zfill(2)
+				time = year+"-"+month+"-"+day+" "+hour+":"+minute+":"+second
+				self.attr.update({"Time":time})
+			elif chunkType == "tEXt":
+				self.attr.update({"Text":chunk.decode()})
+			else:
+				self.warn("Found chunk "+chunkType+" that was not handled.")  # Meant for anciliary chunks
+
+
+class gifParse(base):
+	"""
+	GIF framework - retreive pixel array, get attr, etc
+	"""
+	def __init__(self, file="range.gif"):
+		self.warn("GIF implementation not yet ready", 2)
+		base.__init__(self, file)
+		assert file[-4:] == ".gif", "File not GIF"
+		magicnum = self.from_front(6)
+		if not (magicnum == b"GIF87a" or magicnum == b"GIF89a"):
+			warn("Broken magic number", 2)
+
+try:
+	from PIL import Image
+	import numpy as np
+	class genericParse(base):
+		"""
+		A catch all for image types I haven't worked on yet yet
+		"""
+		def __init__(self, file=""):
+			base.__init__(self, file)
+			self.PIL_img = Image.open(file)
+			self.pixel_array = np.asarray(self.PIL_img)
+			self.pixels = [val for sub in self.pixel_array for val in sub]  # Flatten the array
+			self.attr.update({"height":self.pixel_array.shape[0], "width":self.pixel_array.shape[1]})
+except ModuleNotFoundError:
+	base.warn("PIL or numpy not found, genericParse will not work")
