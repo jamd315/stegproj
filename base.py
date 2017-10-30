@@ -1,9 +1,38 @@
 """
 Base Frame - All the steg attempts extend from this, meant for quick scalability.
+
+TODO:
+
 """
 import os
 import sys
 import zlib
+
+
+def pretty_dict(the_dict, extra_spaces=2, fill="."):
+		"""Make a dict pretty for printing"""
+		str_out = "\n"
+		max_key = max([len(x) for x in the_dict])
+		for key in the_dict:  # Turns out you can't comment on line continuations.
+		# This builds the output string by adding the dict key, followed by however
+		# many of the fill character it needs, followed by the value, and wraps
+		# up each line with a newline character
+			str_out+=str(key)\
+					+fill*(max_key+extra_spaces-len(str(key)))\
+					+str(the_dict[key])+"\n"
+		return str_out
+
+
+def warn(msg, level=0):
+		if level is 0:
+			print("\n[WARN] "+msg+"\n")
+		elif level is 1:
+			print("\n[REALLY WARN] "+msg+"\n")
+		elif level is 2:
+			exit("[CRITICAL] "+msg+"\n")
+		else:
+			exit("[APOCALYPTICAL]"+msg+"\n"+"Also, check this out because\
+			 the warn function was used improperly")
 
 
 class base:
@@ -19,33 +48,11 @@ class base:
 		with open(file, "rb") as f:
 			self.img = f.read()
 
-	def from_front(self, n):
+	def from_front(self, n):  # Needs to be a class method
 		"""Almost works like a pop, but doesn't modify the source, instead keeping track of position"""
 		self._img_scrub+=n
 		return self.img[self._img_scrub-n:self._img_scrub]  # Return needs to happen after the +=
 
-	@staticmethod
-	def pretty_dict(the_dict, extra_spaces=2, fill="."):
-		"""Make a dict pretty for printing"""
-		str_out = "\n"
-		max_key = max([len(x) for x in the_dict])
-		for key in the_dict:  # Turns out you can't comment on line continuations.
-		# This builds the output string by adding the dict key, followed by however
-		# many of the fill character it needs, followed by the value, and wraps
-		# up each line with a newline character
-			str_out+=str(key)\
-					+fill*(max_key+extra_spaces-len(str(key)))\
-					+str(the_dict[key])+"\n"
-		return str_out
-
-	@staticmethod
-	def warn(msg, level=0):
-		if level is 0:
-			print("\n[WARN] "+msg+"\n")
-		elif level is 1:
-			print("\n[REALLY WARN] "+msg+"\n")
-		else:
-			exit("[REALLY WARN] "+msg+"\n")
 
 class bmpParse(base):
 	"""
@@ -78,7 +85,7 @@ class bmpParse(base):
 			"offset":int.from_bytes(self.img[10:14], byteorder="little")
 		})
 		if self.attr["headerField"] != "BM":
-			self.warn("Using OS/2 is not supported")
+			warn("Using OS/2 is not supported")
 		DIB_size = int.from_bytes(self.img[14:18], byteorder="little")
 		DIB = self.img[18:18+DIB_size]
 		self.attr.update({  # Get the data from the DIB header and append to the attributes 
@@ -117,7 +124,7 @@ class pngParse(base):
 	(Maybe?) verify CRC
 	"""
 	def __init__(self, file="8bitBW.png"):  # This init only contains PNG relevant stuff, see base.__init__ for general stuff
-		self.warn("PNG isn't quite working yet", 2)
+		warn("PNG isn't quite working yet", 1)
 		base.__init__(self, file)
 		assert file[-4:] == ".png", "File not PNG"
 		self.rawChunks = {}
@@ -147,11 +154,11 @@ class pngParse(base):
 					"interlaceMethod":{"0":"None", "1":"Adam7"}[str(chunk[12])]
 				}
 				if self.attr["colorType"] is not 0 or self.attr["bitDepth"] not in [1, 2, 4, 8, 16]:
-					self.warn("Not a greyscale, or invalid bit depth")
+					warn("Not a greyscale, or invalid bit depth")
 				if self.attr["interlaceMethod"] is not "None":
-					self.warn("Adam7 interlace detected, currently not supported")
+					warn("Adam7 interlace detected, currently not supported")
 				if self.attr["filterMethod"] is not "None":
-					self.warn("Unknown filter type of "+self.attr["filterMethod"])
+					warn("Unknown filter type of "+self.attr["filterMethod"])
 			elif chunkType == "IDAT":
 				self.raw_bytes += chunk  # So it turns out there can be multiple IDAT chunks, this method facilitates that.
 			elif chunkType == "IEND":
@@ -168,7 +175,7 @@ class pngParse(base):
 			elif chunkType == "tEXt":
 				self.attr.update({"Text":chunk.decode()})
 			else:
-				self.warn("Found chunk "+chunkType+" that was not handled.")  # Meant for anciliary chunks
+				warn("Found chunk "+chunkType+" that was not handled.")  # Meant for anciliary chunks
 
 
 class gifParse(base):
@@ -176,20 +183,27 @@ class gifParse(base):
 	GIF framework - retreive pixel array, get attr, etc
 	"""
 	def __init__(self, file="range.gif"):
-		self.warn("GIF implementation not yet ready", 2)
+		warn("GIF implementation is not ready yet", 2)
 		base.__init__(self, file)
 		assert file[-4:] == ".gif", "File not GIF"
 		magicnum = self.from_front(6)
 		if not (magicnum == b"GIF87a" or magicnum == b"GIF89a"):
 			warn("Broken magic number", 2)
 
-try:
+
+class tiffParse(base):
+	def __init__(self, file="range.tiff"):
+		warn("TIFF implementation is not ready yet", 2)
+
+
+try:  # genericParse class in here
 	from PIL import Image
 	import numpy as np
 	class genericParse(base):
 		"""
 		A catch all for image types I haven't worked on yet yet
 		"""
+		exists=True  # To check later
 		def __init__(self, file=""):
 			base.__init__(self, file)
 			self.PIL_img = Image.open(file)
@@ -197,4 +211,49 @@ try:
 			self.pixels = [val for sub in self.pixel_array for val in sub]  # Flatten the array
 			self.attr.update({"height":self.pixel_array.shape[0], "width":self.pixel_array.shape[1]})
 except ModuleNotFoundError:
-	base.warn("PIL or numpy not found, genericParse will not work")
+	warn("PIL or numpy not found, genericParse will not work")
+
+
+def get_parser(file):
+	"""Just makes a decision on what parser to use"""
+	try:
+		generic = genericParse.exists  # Is true if exists, error if it doesn't
+	except NameError:
+		generic = False
+
+	if file[-4:] == ".png":
+		parser = pngParse(file)
+	elif file[-4:] == ".bmp":
+		parser = bmpParse(file)
+	elif file[-4:] == ".gif":
+		parser = gifParse(file)
+	elif file[-4:] == ".tif" or file[-4:] == "tiff":
+		parser = tiffParse(file)
+	elif generic:
+		parser = genericParse(file)
+		warn("Using generic parser for "+file[-4:])
+	else:  # Catch when PIL or numpy not installed
+		warn("Couldn't parse this file at all", 2)
+	return parser
+
+
+if __name__ == "__main__":
+	os.system("cls")
+	if len(sys.argv)>1:
+		file = sys.argv[1]
+	else:
+		warn("Supply base.py with a file please, really only meant to store the classes", 2)
+
+	parser = get_parser(file)
+	try:
+		print("First 10:"+" ".join([format(x, '#04x') for x in parser.raw_bytes[:10]]))
+		print("Last 10: "+" ".join([format(x, '#04x') for x in parser.raw_bytes[-10:]]))
+		print()
+		print("First 10:"+"|".join(str(bin(x)[2:].zfill(8)) for x in parser.raw_bytes[:10]))
+		print("Last 10: "+"|".join(str(bin(x)[2:].zfill(8)) for x in parser.raw_bytes[-10:]))
+	except AttributeError:
+		warn("No raw_bytes")
+	try:
+		print("\nAttributes:"+pretty_dict(parser.attr))
+	except AttributeError:
+		warn("No attributes", 1)
