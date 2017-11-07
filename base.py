@@ -1,5 +1,5 @@
 """
-Base Frame - All the steg attempts extend from this, meant for quick scalability.
+Base Frame - Contains different parsing classes, and re-used functions
 
 TODO:
 
@@ -36,6 +36,9 @@ def warn(msg, level=0):
 
 
 class base:
+	"""
+	Each image parser extends from here for some uniformity
+	"""
 	def __init__(self, file):
 		self.img = None
 		self.pixel_array = None
@@ -216,11 +219,6 @@ except ModuleNotFoundError:
 
 def get_parser(file):
 	"""Just makes a decision on what parser to use"""
-	try:
-		generic = genericParse.exists  # Is true if exists, error if it doesn't
-	except NameError:
-		generic = False
-
 	if file[-4:] == ".png":
 		parser = pngParse(file)
 	elif file[-4:] == ".bmp":
@@ -229,7 +227,7 @@ def get_parser(file):
 		parser = gifParse(file)
 	elif file[-4:] == ".tif" or file[-4:] == "tiff":
 		parser = tiffParse(file)
-	elif generic:
+	elif "genericParse" in globals()
 		parser = genericParse(file)
 		warn("Using generic parser for "+file[-4:])
 	else:  # Catch when PIL or numpy not installed
