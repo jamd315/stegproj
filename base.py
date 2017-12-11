@@ -199,6 +199,17 @@ class tiffParse(base):
 		warn("TIFF implementation is not ready yet", 2)
 
 
+class pgmParse(base):
+	def __init__(self, file="range.pgm"):
+		base.__init__(self, file)
+		assert file[-4:] == .pgm or file[-4:] == .ppm, "Not a pgm?"
+		self.getattr()
+
+		def getattr():
+			self.from_front()
+
+
+
 try:  # genericParse class in here
 	from PIL import Image
 	import numpy as np
@@ -227,6 +238,8 @@ def get_parser(file):
 		parser = gifParse(file)
 	elif file[-4:] == ".tif" or file[-4:] == "tiff":
 		parser = tiffParse(file)
+	elif file[-4:] in [".pgm", ".ppm"]:
+		parser = pgmParse(file)
 	elif "genericParse" in globals()
 		parser = genericParse(file)
 		warn("Using generic parser for "+file[-4:])
